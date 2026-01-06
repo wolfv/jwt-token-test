@@ -1,0 +1,121 @@
+name: Test Trusted Publishing JWT
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Channel to test upload to'
+        required: true
+        default: 'test-channel'
+      host:
+        description: 'Host to test against'
+        required: true
+        default: 'https://preview-coherent-tick.prefix.dev/'
+
+permissions:
+  id-token: write  # Required for OIDC
+
+jobs:
+  test-jwt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get GitHub OIDC token
+        id: oidc
+        run: |
+          # Get the GitHub OIDC token
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=prefix.dev" | jq -r '.value')
+
+          echo "Got OIDC token (first 50 chars): ${OIDC_TOKEN:0:50}..."
+          echo "oidc_token=$OIDC_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Mint JWT token from prefix.dev
+        id: mint
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.oidc_token }}
+          HOST: ${{ inputs.host }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          echo "Minting token from $HOST for channel $CHANNEL..."
+
+          # Call the mint_token endpoint
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"token\": \"$OIDC_TOKEN\"}" \
+            "$HOST/api/oidc/github/mint_token")
+
+          # Split response body and status code
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Failed to mint token: $BODY"
+            exit 1
+          fi
+
+          # Extract the token from the response
+          JWT_TOKEN=$(echo "$BODY" | jq -r '.token // .api_key // .')
+
+          echo "Got JWT token (first 80 chars): ${JWT_TOKEN:0:80}..."
+          echo "Token prefix: ${JWT_TOKEN:0:8}"
+
+          # Mask the token in logs but keep it available
+          echo "::add-mask::$JWT_TOKEN"
+          echo "jwt_token=$JWT_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Test upload with JWT token
+        env:
+          JWT_TOKEN: ${{ steps.mint.outputs.jwt_token }}
+          HOST: ${{ inputs.host }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          echo "Testing upload to $HOST/api/v1/upload/$CHANNEL..."
+
+          # Create a dummy package file (just for testing the auth)
+          echo "test content" > /tmp/test-package.tar.bz2
+
+          # Try to upload (will fail but should show auth working)
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer $JWT_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @/tmp/test-package.tar.bz2 \
+            "$HOST/api/v1/upload/$CHANNEL/noarch/test-package-1.0.0.tar.bz2")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          # 401 = auth failed, anything else means auth worked (even if upload fails for other reasons)
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "::error::Authentication failed! Token was rejected."
+            exit 1
+          elif [ "$HTTP_CODE" = "403" ]; then
+            echo "::warning::Authentication succeeded but not authorized for this channel"
+          else
+            echo "Authentication succeeded! (HTTP $HTTP_CODE)"
+          fi
+
+      - name: Debug token structure
+        env:
+          JWT_TOKEN: ${{ steps.mint.outputs.jwt_token }}
+        run: |
+          echo "Token structure analysis:"
+          echo "- Prefix: ${JWT_TOKEN:0:8}"
+          echo "- Total length: ${#JWT_TOKEN}"
+
+          # If it's a JWT (pfx-jwt.), decode the payload
+          if [[ "$JWT_TOKEN" == pfx-jwt.* ]]; then
+            echo "- Type: JWT token"
+            # Extract the JWT part (after pfx-jwt.)
+            JWT_PART="${JWT_TOKEN#pfx-jwt.}"
+            # Decode the payload (second part)
+            PAYLOAD=$(echo "$JWT_PART" | cut -d'.' -f2 | base64 -d 2>/dev/null || echo "decode failed")
+            echo "- Payload: $PAYLOAD"
+          else
+            echo "- Type: API key (legacy)"
+          fi
