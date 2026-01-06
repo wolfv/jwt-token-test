@@ -10,7 +10,7 @@ on:
       host:
         description: 'Host to test against'
         required: true
-        default: 'https://preview-coherent-tick.prefix.dev/'
+        default: 'https://preview-coherent-tick.prefix.dev'
 
 permissions:
   id-token: write  # Required for OIDC
