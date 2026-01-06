@@ -56,8 +56,13 @@ jobs:
             exit 1
           fi
 
-          # Extract the token from the response
-          JWT_TOKEN=$(echo "$BODY" | jq -r '.token // .api_key // .')
+          # Extract the token from the response (handle both JSON and plain text responses)
+          if echo "$BODY" | jq -e . >/dev/null 2>&1; then
+            JWT_TOKEN=$(echo "$BODY" | jq -r '.token // .api_key // .')
+          else
+            # Response is plain text (the token itself)
+            JWT_TOKEN="$BODY"
+          fi
 
           echo "Got JWT token (first 80 chars): ${JWT_TOKEN:0:80}..."
           echo "Token prefix: ${JWT_TOKEN:0:8}"
