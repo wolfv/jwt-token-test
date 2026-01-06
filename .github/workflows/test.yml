@@ -42,7 +42,7 @@ jobs:
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Content-Type: application/json" \
             -d "{\"token\": \"$OIDC_TOKEN\"}" \
-            "$HOST/api/oidc/github/mint_token")
+            "$HOST/api/oidc/mint_token")
 
           # Split response body and status code
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
