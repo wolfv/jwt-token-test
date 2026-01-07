@@ -6,7 +6,7 @@ on:
       channel:
         description: 'Channel to test upload to'
         required: true
-        default: 'test-channel'
+        default: 'wolf-channel'
       host:
         description: 'Host to test against'
         required: true
@@ -123,4 +123,90 @@ jobs:
             echo "- Payload: $PAYLOAD"
           else
             echo "- Type: API key (legacy)"
+          fi
+
+  test-unauthorized-channel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get GitHub OIDC token
+        id: oidc
+        run: |
+          # Get the GitHub OIDC token
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=prefix.dev" | jq -r '.value')
+
+          echo "Got OIDC token (first 50 chars): ${OIDC_TOKEN:0:50}..."
+          echo "oidc_token=$OIDC_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Mint JWT token from prefix.dev
+        id: mint
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.oidc_token }}
+          HOST: ${{ inputs.host }}
+        run: |
+          echo "Minting token from $HOST..."
+
+          # Call the mint_token endpoint
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"token\": \"$OIDC_TOKEN\"}" \
+            "$HOST/api/oidc/mint_token")
+
+          # Split response body and status code
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Failed to mint token: $BODY"
+            exit 1
+          fi
+
+          # Extract the token from the response
+          if echo "$BODY" | jq -e . >/dev/null 2>&1; then
+            JWT_TOKEN=$(echo "$BODY" | jq -r '.token // .api_key // .')
+          else
+            JWT_TOKEN="$BODY"
+          fi
+
+          echo "Got JWT token (first 80 chars): ${JWT_TOKEN:0:80}..."
+          echo "::add-mask::$JWT_TOKEN"
+          echo "jwt_token=$JWT_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Test upload to unauthorized channel (should fail)
+        env:
+          JWT_TOKEN: ${{ steps.mint.outputs.jwt_token }}
+          HOST: ${{ inputs.host }}
+        run: |
+          echo "Testing upload to unauthorized channel: test-ruben..."
+          echo "This should FAIL with 403 (not authorized)"
+
+          # Create a dummy package file
+          echo "test content" > /tmp/test-package.tar.bz2
+
+          # Try to upload to test-ruben channel (should be unauthorized)
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer $JWT_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @/tmp/test-package.tar.bz2 \
+            "$HOST/api/v1/upload/test-ruben/noarch/test-package-1.0.0.tar.bz2")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          # We EXPECT this to fail with 403
+          if [ "$HTTP_CODE" = "403" ]; then
+            echo "✓ Got expected 403 Forbidden - correctly denied access to unauthorized channel"
+            exit 0
+          elif [ "$HTTP_CODE" = "401" ]; then
+            echo "::error::Got 401 - authentication failed (unexpected)"
+            exit 1
+          else
+            echo "::error::Expected 403 but got HTTP $HTTP_CODE - this means we have access to a channel we shouldn't!"
+            exit 1
           fi
