@@ -81,13 +81,21 @@ jobs:
 
           # Create a dummy package file (just for testing the auth)
           echo "test content" > /tmp/test-package.tar.bz2
+          FILE_NAME="test-package-1.0.0.tar.bz2"
+          FILE_SHA256=$(sha256sum /tmp/test-package.tar.bz2 | cut -d' ' -f1)
+          FILE_SIZE=$(stat -c%s /tmp/test-package.tar.bz2)
+
+          echo "File: $FILE_NAME, SHA256: $FILE_SHA256, Size: $FILE_SIZE"
 
           # Try to upload (will fail but should show auth working)
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/octet-stream" \
+            -H "X-File-Name: $FILE_NAME" \
+            -H "X-File-SHA256: $FILE_SHA256" \
+            -H "Content-Length: $FILE_SIZE" \
             --data-binary @/tmp/test-package.tar.bz2 \
-            "$HOST/api/v1/upload/$CHANNEL/test-package-1.0.0.tar.bz2")
+            "$HOST/api/v1/upload/$CHANNEL")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
@@ -185,13 +193,21 @@ jobs:
 
           # Create a dummy package file
           echo "test content" > /tmp/test-package.tar.bz2
+          FILE_NAME="test-package-1.0.0.tar.bz2"
+          FILE_SHA256=$(sha256sum /tmp/test-package.tar.bz2 | cut -d' ' -f1)
+          FILE_SIZE=$(stat -c%s /tmp/test-package.tar.bz2)
+
+          echo "File: $FILE_NAME, SHA256: $FILE_SHA256, Size: $FILE_SIZE"
 
           # Try to upload to test-ruben channel (should be unauthorized)
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/octet-stream" \
+            -H "X-File-Name: $FILE_NAME" \
+            -H "X-File-SHA256: $FILE_SHA256" \
+            -H "Content-Length: $FILE_SIZE" \
             --data-binary @/tmp/test-package.tar.bz2 \
-            "$HOST/api/v1/upload/test-ruben/test-package-1.0.0.tar.bz2")
+            "$HOST/api/v1/upload/test-ruben")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
