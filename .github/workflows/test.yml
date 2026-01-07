@@ -87,7 +87,7 @@ jobs:
             -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @/tmp/test-package.tar.bz2 \
-            "$HOST/api/v1/upload/$CHANNEL/noarch/test-package-1.0.0.tar.bz2")
+            "$HOST/api/v1/upload/$CHANNEL/test-package-1.0.0.tar.bz2")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
@@ -191,7 +191,7 @@ jobs:
             -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @/tmp/test-package.tar.bz2 \
-            "$HOST/api/v1/upload/test-ruben/noarch/test-package-1.0.0.tar.bz2")
+            "$HOST/api/v1/upload/test-ruben/test-package-1.0.0.tar.bz2")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
