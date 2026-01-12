@@ -71,6 +71,26 @@ jobs:
           echo "::add-mask::$JWT_TOKEN"
           echo "jwt_token=$JWT_TOKEN" >> $GITHUB_OUTPUT
 
+      - name: Debug token structure
+        env:
+          JWT_TOKEN: ${{ steps.mint.outputs.jwt_token }}
+        run: |
+          echo "Token structure analysis:"
+          echo "- Prefix: ${JWT_TOKEN:0:8}"
+          echo "- Total length: ${#JWT_TOKEN}"
+
+          # If it's a JWT (pfx-jwt.), decode the payload
+          if [[ "$JWT_TOKEN" == pfx-jwt.* ]]; then
+            echo "- Type: JWT token"
+            # Extract the JWT part (after pfx-jwt.)
+            JWT_PART="${JWT_TOKEN#pfx-jwt.}"
+            # Decode the payload (second part)
+            PAYLOAD=$(echo "$JWT_PART" | cut -d'.' -f2 | base64 -d 2>/dev/null || echo "decode failed")
+            echo "- Payload: $PAYLOAD"
+          else
+            echo "- Type: API key (legacy)"
+          fi
+
       - name: Test upload with JWT token
         env:
           JWT_TOKEN: ${{ steps.mint.outputs.jwt_token }}
@@ -111,26 +131,6 @@ jobs:
             echo "::warning::Authentication succeeded but not authorized for this channel"
           else
             echo "Authentication succeeded! (HTTP $HTTP_CODE)"
-          fi
-
-      - name: Debug token structure
-        env:
-          JWT_TOKEN: ${{ steps.mint.outputs.jwt_token }}
-        run: |
-          echo "Token structure analysis:"
-          echo "- Prefix: ${JWT_TOKEN:0:8}"
-          echo "- Total length: ${#JWT_TOKEN}"
-
-          # If it's a JWT (pfx-jwt.), decode the payload
-          if [[ "$JWT_TOKEN" == pfx-jwt.* ]]; then
-            echo "- Type: JWT token"
-            # Extract the JWT part (after pfx-jwt.)
-            JWT_PART="${JWT_TOKEN#pfx-jwt.}"
-            # Decode the payload (second part)
-            PAYLOAD=$(echo "$JWT_PART" | cut -d'.' -f2 | base64 -d 2>/dev/null || echo "decode failed")
-            echo "- Payload: $PAYLOAD"
-          else
-            echo "- Type: API key (legacy)"
           fi
 
   test-unauthorized-channel:
