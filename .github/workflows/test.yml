@@ -84,6 +84,11 @@ jobs:
             echo "- Type: JWT token"
             # Extract the JWT part (after pfx-jwt.)
             JWT_PART="${JWT_TOKEN#pfx-jwt.}"
+            # Decode the header (first part) to get the key ID
+            HEADER=$(echo "$JWT_PART" | cut -d'.' -f1 | base64 -d 2>/dev/null || echo "decode failed")
+            echo "- Header: $HEADER"
+            KID=$(echo "$HEADER" | jq -r '.kid // "not found"')
+            echo "- Key ID (kid): $KID"
             # Decode the payload (second part)
             PAYLOAD=$(echo "$JWT_PART" | cut -d'.' -f2 | base64 -d 2>/dev/null || echo "decode failed")
             echo "- Payload: $PAYLOAD"
